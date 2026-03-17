@@ -10,10 +10,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.agustavomartin.botlocalensayoandroid.data.BotRepository
+import com.agustavomartin.botlocalensayoandroid.data.MemberSummary
 
 @Composable
 fun MembersScreen(repository: BotRepository) {
-    val items = produceState(initialValue = emptyList(), producer = { value = repository.getMembers() }).value
+    val items = produceState<List<MemberSummary>?>(initialValue = null, producer = {
+        value = repository.getMembers()
+    }).value
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -27,6 +30,12 @@ fun MembersScreen(repository: BotRepository) {
                 subtitle = "Resumen rapido de miembros, telefono y fecha de actualizacion sincronizada."
             )
         }
+
+        if (items == null) {
+            item { LoadingPanel("Cargando miembros...") }
+            return@LazyColumn
+        }
+
         items(items) { item ->
             DataRow(
                 primary = item.name,

@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,7 +18,7 @@ import com.agustavomartin.botlocalensayoandroid.data.DashboardSnapshot
 fun HomeScreen(repository: BotRepository) {
     val snapshot = produceState<DashboardSnapshot?>(initialValue = null) {
         value = repository.getDashboard()
-    }.value ?: return
+    }.value
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -33,6 +32,12 @@ fun HomeScreen(repository: BotRepository) {
                 subtitle = "Acceso rapido a audios, pagos y miembros del local."
             )
         }
+
+        if (snapshot == null) {
+            item { LoadingPanel("Cargando dashboard...") }
+            return@LazyColumn
+        }
+
         item {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -41,7 +46,7 @@ fun HomeScreen(repository: BotRepository) {
                 InfoCard("Biblioteca", snapshot.totalAudios.toString(), "${snapshot.totalEnsayos} ensayos, ${snapshot.totalRiffs} riffs y ${snapshot.totalCanciones} canciones.")
                 InfoCard("Miembros", snapshot.activeMembers.toString(), "${snapshot.activeMembers} miembros activos sincronizados.")
                 snapshot.lastPayment?.let {
-                    InfoCard("Ultimo pago", it.monthLabel, "${it.payerName} · ${it.amountLabel}")
+                    InfoCard("Ultimo pago", it.monthLabel, "${it.payerName} - ${it.amountLabel}")
                 }
                 InfoCard("Proximo pagador", snapshot.nextPayerName, snapshot.nextPayerMonthLabel)
             }

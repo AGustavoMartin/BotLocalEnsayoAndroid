@@ -107,7 +107,8 @@ class RealBotRepository(
                     id = item.optInt("id"),
                     type = item.optString("type").toAudioType(),
                     title = item.optString("title"),
-                    dateLabel = item.optString("dateLabel"),
+                    dateLabel = formatCompactDateLabel(item.optString("dateLabel")),
+                    rawDateKey = item.optString("rawDateKey").ifBlank { null },
                     driveUrl = item.optString("driveUrl").ifBlank { null }
                 )
             )

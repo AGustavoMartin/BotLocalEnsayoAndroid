@@ -13,6 +13,7 @@ object AppContainer {
     private lateinit var sessionStoreInstance: SessionStore
     private lateinit var authRepositoryInstance: AuthRepository
     private lateinit var botRepositoryInstance: BotRepository
+    private lateinit var playbackManagerInstance: AudioPlaybackManager
 
     fun initialize(context: Context) {
         if (!::sessionStoreInstance.isInitialized) {
@@ -23,6 +24,7 @@ object AppContainer {
             } else {
                 RealBotRepository(authRepositoryInstance)
             }
+            playbackManagerInstance = AudioPlaybackManager(context.applicationContext, authRepositoryInstance)
         }
     }
 
@@ -31,4 +33,7 @@ object AppContainer {
 
     val authRepository: AuthRepository
         get() = authRepositoryInstance
+
+    val playbackManager: AudioPlaybackManager
+        get() = playbackManagerInstance
 }

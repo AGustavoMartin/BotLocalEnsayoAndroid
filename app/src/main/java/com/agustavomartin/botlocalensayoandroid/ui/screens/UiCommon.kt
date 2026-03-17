@@ -2,14 +2,21 @@ package com.agustavomartin.botlocalensayoandroid.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -77,4 +84,61 @@ fun DataRow(primary: String, secondary: String, trailing: String? = null) {
             Text(trailing, color = Color(0xFF47D7D1), style = MaterialTheme.typography.labelLarge)
         }
     }
+}
+
+@Composable
+fun LoadingPanel(message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .background(Color(0xB2263140), RoundedCornerShape(24.dp))
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        CircularProgressIndicator(color = Color(0xFF47D7D1), strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
+        Text(message, color = Color(0xFFC8D1DB), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+fun FilterChipRow(
+    labels: List<String>,
+    selectedLabel: String,
+    onSelected: (String) -> Unit
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+    ) {
+        labels.forEach { label ->
+            FilterChip(
+                selected = selectedLabel == label,
+                onClick = { onSelected(label) },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFF0E948B),
+                    selectedLabelColor = Color(0xFFF6F3EC),
+                    containerColor = Color(0xB2263140),
+                    labelColor = Color(0xFFC8D1DB)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun FilterField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        label = { Text(label) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+    )
 }

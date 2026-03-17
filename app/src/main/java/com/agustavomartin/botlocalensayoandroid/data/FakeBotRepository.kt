@@ -2,10 +2,10 @@ package com.agustavomartin.botlocalensayoandroid.data
 
 class FakeBotRepository : BotRepository {
     private val audios = listOf(
-        AudioItem(15, AudioType.CANCION, "Cancion_02_20260306", "6 mar 2026"),
-        AudioItem(14, AudioType.ENSAYO, "Ensayo_2_20260306", "6 mar 2026"),
-        AudioItem(13, AudioType.CANCION, "Cancion_01_20260306", "6 mar 2026"),
-        AudioItem(5, AudioType.RIFF, "Riff_10_20260306", "6 mar 2026")
+        AudioItem(15, AudioType.CANCION, "Cancion_02_20260306", "06/03/2026", rawDateKey = "20260306"),
+        AudioItem(14, AudioType.ENSAYO, "Ensayo_2_20260306", "06/03/2026", rawDateKey = "20260306"),
+        AudioItem(13, AudioType.CANCION, "Cancion_01_20260306", "06/03/2026", rawDateKey = "20260306"),
+        AudioItem(5, AudioType.RIFF, "Riff_10_20260306", "06/03/2026", rawDateKey = "20260306")
     )
 
     override suspend fun getDashboard(): DashboardSnapshot = DashboardSnapshot(

@@ -5,6 +5,7 @@ data class AudioItem(
     val type: AudioType,
     val title: String,
     val dateLabel: String,
+    val rawDateKey: String? = null,
     val driveUrl: String? = null
 )
 
