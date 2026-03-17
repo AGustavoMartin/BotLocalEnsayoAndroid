@@ -48,7 +48,7 @@ class SessionStore(private val context: Context) {
     }
 
     suspend fun save(session: AppSession) {
-        context.appSessionDataStore.edit { preferences: MutablePreferences ->
+        context.appSessionDataStore.edit { preferences ->
             preferences[Keys.phone] = session.phone
             preferences[Keys.memberName] = session.memberName
             preferences[Keys.accessToken] = session.accessToken

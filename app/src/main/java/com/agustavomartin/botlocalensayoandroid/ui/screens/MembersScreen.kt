@@ -24,7 +24,7 @@ fun MembersScreen(repository: BotRepository) {
             ScreenHeader(
                 eyebrow = "MIEMBROS",
                 title = "Actividad",
-                subtitle = "Resumen rapido de miembros, telefono y ultima vez vistos."
+                subtitle = "Resumen rapido de miembros, telefono y fecha de actualizacion sincronizada."
             )
         }
         items(items) { item ->
