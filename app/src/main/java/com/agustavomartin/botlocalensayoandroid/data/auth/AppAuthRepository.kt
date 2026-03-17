@@ -137,6 +137,36 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
         return session
     }
 
+    override suspend fun registerPushToken(pushToken: String, deviceLabel: String): Boolean {
+        val session = restoreSession() ?: return false
+        if (apiBaseUrl().isBlank()) return false
+
+        return runCatching {
+            val response = postJsonAuthorized(
+                path = "/api/app/push/register",
+                accessToken = session.accessToken,
+                body = JSONObject()
+                    .put("pushToken", pushToken)
+                    .put("deviceLabel", deviceLabel)
+            )
+            response.optBoolean("ok")
+        }.getOrDefault(false)
+    }
+
+    override suspend fun fetchAppMeta(): AppMeta? {
+        if (apiBaseUrl().isBlank()) return null
+
+        return runCatching {
+            val response = getJson("/api/app/meta")
+            AppMeta(
+                currentVersion = response.optString("currentVersion"),
+                minimumSupportedVersion = response.optString("minimumSupportedVersion"),
+                updateUrl = response.optString("updateUrl"),
+                releaseNotes = response.optString("releaseNotes")
+            )
+        }.getOrNull()
+    }
+
     override suspend fun logout() {
         val current = sessionStore.read()
         if (current != null && apiBaseUrl().isNotBlank()) {
@@ -171,6 +201,19 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
         refreshExpiresAt = json.getLong("refreshExpiresAt")
     )
 
+    private suspend fun getJson(path: String): JSONObject = withContext(Dispatchers.IO) {
+        val url = URL(apiBaseUrl() + path)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 10000
+        }
+
+        val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (text.isBlank()) JSONObject() else JSONObject(text)
+    }
+
     private suspend fun postJson(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
         val url = URL(apiBaseUrl() + path)
         val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -179,6 +222,30 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
             connectTimeout = 10000
             readTimeout = 10000
             setRequestProperty("Content-Type", "application/json")
+        }
+
+        connection.outputStream.use { output ->
+            output.write(body.toString().toByteArray())
+        }
+
+        val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        if (text.isBlank()) {
+            JSONObject().put("ok", false).put("error", "EMPTY_RESPONSE")
+        } else {
+            JSONObject(text)
+        }
+    }
+
+    private suspend fun postJsonAuthorized(path: String, accessToken: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val url = URL(apiBaseUrl() + path)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 10000
+            readTimeout = 10000
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer $accessToken")
         }
 
         connection.outputStream.use { output ->

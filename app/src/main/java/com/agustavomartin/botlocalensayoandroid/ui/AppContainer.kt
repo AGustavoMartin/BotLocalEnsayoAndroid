@@ -10,6 +10,7 @@ import com.agustavomartin.botlocalensayoandroid.data.auth.AuthRepository
 import com.agustavomartin.botlocalensayoandroid.data.auth.SessionStore
 
 object AppContainer {
+    private lateinit var appContext: Context
     private lateinit var sessionStoreInstance: SessionStore
     private lateinit var authRepositoryInstance: AuthRepository
     private lateinit var botRepositoryInstance: BotRepository
@@ -17,16 +18,20 @@ object AppContainer {
 
     fun initialize(context: Context) {
         if (!::sessionStoreInstance.isInitialized) {
-            sessionStoreInstance = SessionStore(context.applicationContext)
+            appContext = context.applicationContext
+            sessionStoreInstance = SessionStore(appContext)
             authRepositoryInstance = AppAuthRepository(sessionStoreInstance)
             botRepositoryInstance = if (BuildConfig.API_BASE_URL.isBlank()) {
                 FakeBotRepository()
             } else {
                 RealBotRepository(authRepositoryInstance)
             }
-            playbackManagerInstance = AudioPlaybackManager(context.applicationContext, authRepositoryInstance)
+            playbackManagerInstance = AudioPlaybackManager(appContext, authRepositoryInstance)
         }
     }
+
+    val context: Context
+        get() = appContext
 
     val repository: BotRepository
         get() = botRepositoryInstance

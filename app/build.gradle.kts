@@ -23,7 +23,6 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"\"")
         buildConfigField("String", "API_BASE_URL", "\"https://bot-ensayo.vercel.app\"")
-
     }
 
     buildTypes {
@@ -73,6 +72,7 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+    implementation("com.google.firebase:firebase-messaging:24.0.3")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)

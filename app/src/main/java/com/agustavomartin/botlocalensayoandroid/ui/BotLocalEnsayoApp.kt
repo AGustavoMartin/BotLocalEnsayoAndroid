@@ -1,5 +1,12 @@
 package com.agustavomartin.botlocalensayoandroid.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,14 +27,14 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Replay10
 import androidx.compose.material.icons.outlined.SpaceDashboard
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,24 +48,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.agustavomartin.botlocalensayoandroid.data.auth.AppMeta
 import com.agustavomartin.botlocalensayoandroid.data.auth.AppSession
+import com.agustavomartin.botlocalensayoandroid.notifications.AppFirebaseMessagingService
 import com.agustavomartin.botlocalensayoandroid.ui.screens.HomeScreen
 import com.agustavomartin.botlocalensayoandroid.ui.screens.LibraryScreen
 import com.agustavomartin.botlocalensayoandroid.ui.screens.LoadingScreen
 import com.agustavomartin.botlocalensayoandroid.ui.screens.LoginScreen
 import com.agustavomartin.botlocalensayoandroid.ui.screens.MembersScreen
 import com.agustavomartin.botlocalensayoandroid.ui.screens.PaymentsScreen
+import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 private data class TopLevelDestination(
     val route: String,
@@ -71,6 +86,17 @@ fun BotLocalEnsayoApp() {
     var session by remember { mutableStateOf<AppSession?>(null) }
     var loadingSession by remember { mutableStateOf(true) }
     var playbackUiState by remember { mutableStateOf(AppContainer.playbackManager.uiState.value) }
+    var appMeta by remember { mutableStateOf<AppMeta?>(null) }
+    var dismissedUpdateVersion by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            registerPushTokenSafely()
+        }
+    }
 
     LaunchedEffect(Unit) {
         AppContainer.playbackManager.uiState.collectLatest { state ->
@@ -90,6 +116,17 @@ fun BotLocalEnsayoApp() {
         loadingSession = false
     }
 
+    LaunchedEffect(session?.phone) {
+        if (session != null) {
+            AppFirebaseMessagingService.ensureChannel(context)
+            maybeRequestNotificationPermission(
+                onNeedsPermission = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                onGranted = { registerPushTokenSafely() }
+            )
+            appMeta = AppContainer.authRepository.fetchAppMeta()
+        }
+    }
+
     if (loadingSession) {
         AppBackground { LoadingScreen() }
         return
@@ -103,6 +140,54 @@ fun BotLocalEnsayoApp() {
             )
         }
         return
+    }
+
+    val currentVersion = remember { readInstalledVersionName(context) }
+    val forceUpdate = appMeta?.minimumSupportedVersion?.takeIf { it.isNotBlank() }?.let { compareVersions(currentVersion, it) < 0 } == true
+    val showUpdateDialog = appMeta?.currentVersion?.takeIf { it.isNotBlank() }?.let {
+        compareVersions(currentVersion, it) < 0 && dismissedUpdateVersion != it
+    } == true
+
+    if (showUpdateDialog || forceUpdate) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!forceUpdate) {
+                    dismissedUpdateVersion = appMeta?.currentVersion.orEmpty()
+                }
+            },
+            title = { Text(if (forceUpdate) "Actualizacion requerida" else "Nueva version disponible") },
+            text = {
+                Text(
+                    buildString {
+                        append("Version instalada: ")
+                        append(currentVersion)
+                        append("\nVersion disponible: ")
+                        append(appMeta?.currentVersion ?: "N/D")
+                        if (!appMeta?.releaseNotes.isNullOrBlank()) {
+                            append("\n\n")
+                            append(appMeta?.releaseNotes)
+                        }
+                    }
+                )
+            },
+            confirmButton = {
+                OutlinedButton(onClick = {
+                    val url = appMeta?.updateUrl.orEmpty()
+                    if (url.isNotBlank()) {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                    }
+                }) {
+                    Text("Actualizar")
+                }
+            },
+            dismissButton = if (forceUpdate) null else ({
+                OutlinedButton(onClick = {
+                    dismissedUpdateVersion = appMeta?.currentVersion.orEmpty()
+                }) {
+                    Text("Mas tarde")
+                }
+            })
+        )
     }
 
     val navController = rememberNavController()
@@ -237,12 +322,12 @@ private fun PlaybackDock(
                     )
                 }
 
-                OutlinedIconButton(onClick = onClose) {
+                OutlinedButton(onClick = onClose) {
                     Icon(Icons.Outlined.Close, contentDescription = "Cerrar reproductor")
                 }
             }
 
-            Slider(
+            androidx.compose.material3.Slider(
                 value = sliderPosition,
                 onValueChange = { sliderPosition = it },
                 onValueChangeFinished = { onSeekTo(sliderPosition.toLong()) },
@@ -263,7 +348,7 @@ private fun PlaybackDock(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedIconButton(onClick = onSeekBack) {
+                OutlinedButton(onClick = onSeekBack) {
                     Icon(Icons.Outlined.Replay10, contentDescription = "Retroceder 10 segundos")
                 }
                 FilledIconButton(onClick = onTogglePlayback, modifier = Modifier.size(64.dp)) {
@@ -273,12 +358,59 @@ private fun PlaybackDock(
                         modifier = Modifier.size(34.dp)
                     )
                 }
-                OutlinedIconButton(onClick = onSeekForward) {
+                OutlinedButton(onClick = onSeekForward) {
                     Icon(Icons.Outlined.Forward10, contentDescription = "Avanzar 10 segundos")
                 }
             }
         }
     }
+}
+
+private fun maybeRequestNotificationPermission(
+    onNeedsPermission: () -> Unit,
+    onGranted: () -> Unit
+) {
+    val context = AppContainer.context
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        onGranted()
+        return
+    }
+
+    val granted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
+
+    if (granted) onGranted() else onNeedsPermission()
+}
+
+private fun registerPushTokenSafely() {
+    runCatching {
+        FirebaseMessaging.getInstance().token
+            .addOnSuccessListener { token ->
+                if (token.isNullOrBlank()) return@addOnSuccessListener
+                CoroutineScope(Dispatchers.IO).launch {
+                    AppContainer.authRepository.registerPushToken(token, Build.MODEL)
+                }
+            }
+    }
+}
+
+private fun readInstalledVersionName(context: android.content.Context): String {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    return info.versionName ?: "0.0.0"
+}
+
+private fun compareVersions(left: String, right: String): Int {
+    val leftParts = left.split('.').mapNotNull { it.toIntOrNull() }
+    val rightParts = right.split('.').mapNotNull { it.toIntOrNull() }
+    val size = maxOf(leftParts.size, rightParts.size)
+    for (index in 0 until size) {
+        val l = leftParts.getOrElse(index) { 0 }
+        val r = rightParts.getOrElse(index) { 0 }
+        if (l != r) return l.compareTo(r)
+    }
+    return 0
 }
 
 private fun formatMs(value: Long): String {
@@ -303,3 +435,5 @@ private fun AppBackground(content: @Composable () -> Unit) {
         content()
     }
 }
+
+

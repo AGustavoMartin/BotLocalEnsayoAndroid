@@ -9,6 +9,13 @@ data class AppSession(
     val refreshExpiresAt: Long
 )
 
+data class AppMeta(
+    val currentVersion: String,
+    val minimumSupportedVersion: String,
+    val updateUrl: String,
+    val releaseNotes: String
+)
+
 sealed interface AuthStartResult {
     data class CreatePin(val phone: String, val memberName: String) : AuthStartResult
     data class EnterPin(val phone: String, val memberName: String) : AuthStartResult
