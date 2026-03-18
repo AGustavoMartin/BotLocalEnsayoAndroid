@@ -5,10 +5,12 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.agustavomartin.botlocalensayoandroid.MainActivity
+import com.agustavomartin.botlocalensayoandroid.MainActivityIntentKeys
 import com.agustavomartin.botlocalensayoandroid.R
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -37,27 +39,35 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         ensureChannel(applicationContext)
 
-        val title = message.notification?.title ?: "Bot Ensayo"
-        val body = message.notification?.body ?: "Hay contenido nuevo en la biblioteca."
+        val title = message.data["title"]?.takeIf { it.isNotBlank() } ?: message.notification?.title ?: "Bot Ensayo"
+        val body = message.data["body"]?.takeIf { it.isNotBlank() } ?: message.notification?.body ?: "Hay contenido nuevo en la biblioteca."
 
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivityIntentKeys.EXTRA_SCREEN, message.data["screen"] ?: "library")
+            message.data["itemId"]?.toIntOrNull()?.let { putExtra(MainActivityIntentKeys.EXTRA_ITEM_ID, it) }
+            message.data["itemType"]?.let { putExtra(MainActivityIntentKeys.EXTRA_ITEM_TYPE, it) }
         }
 
         val pendingIntent = PendingIntent.getActivity(
             this,
-            1001,
+            (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val largeIcon = BitmapFactory.decodeResource(resources, R.drawable.notification_icon)
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.notification_icon)
+            .setLargeIcon(largeIcon)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setAutoCancel(true)
+            .setOnlyAlertOnce(false)
             .setContentIntent(pendingIntent)
             .build()
 
@@ -87,3 +97,4 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 }
+

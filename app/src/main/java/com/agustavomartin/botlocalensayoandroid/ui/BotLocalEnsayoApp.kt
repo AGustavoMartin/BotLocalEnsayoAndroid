@@ -59,6 +59,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.agustavomartin.botlocalensayoandroid.data.AudioType
 import com.agustavomartin.botlocalensayoandroid.data.auth.AppMeta
 import com.agustavomartin.botlocalensayoandroid.data.auth.AppSession
 import com.agustavomartin.botlocalensayoandroid.notifications.AppFirebaseMessagingService
@@ -88,7 +89,9 @@ fun BotLocalEnsayoApp() {
     var playbackUiState by remember { mutableStateOf(AppContainer.playbackManager.uiState.value) }
     var appMeta by remember { mutableStateOf<AppMeta?>(null) }
     var dismissedUpdateVersion by remember { mutableStateOf("") }
+    var pendingPlaybackRequest by remember { mutableStateOf(AppContainer.pendingPlaybackRequest.value) }
     val context = LocalContext.current
+    val navController = rememberNavController()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -101,6 +104,20 @@ fun BotLocalEnsayoApp() {
     LaunchedEffect(Unit) {
         AppContainer.playbackManager.uiState.collectLatest { state ->
             playbackUiState = state
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        AppContainer.pendingPlaybackRequest.collectLatest { request ->
+            pendingPlaybackRequest = request
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        AppContainer.sessionExpiredEvents.collect {
+            session = null
+            appMeta = null
+            dismissedUpdateVersion = ""
         }
     }
 
@@ -125,6 +142,34 @@ fun BotLocalEnsayoApp() {
             )
             appMeta = AppContainer.authRepository.fetchAppMeta()
         }
+    }
+
+    LaunchedEffect(session?.phone, pendingPlaybackRequest?.itemId, pendingPlaybackRequest?.itemType, pendingPlaybackRequest?.screen) {
+        val request = pendingPlaybackRequest ?: return@LaunchedEffect
+        if (session == null) return@LaunchedEffect
+
+        if (!request.screen.isNullOrBlank()) {
+            navController.navigate("library") {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+
+        val targetId = request.itemId
+        if (targetId != null) {
+            val library = runCatching { AppContainer.repository.getLibrary() }.getOrNull().orEmpty()
+            val target = library.firstOrNull { item ->
+                item.id == targetId && (request.itemType.isNullOrBlank() || item.type.matchesPushType(request.itemType))
+            }
+            if (target != null) {
+                AppContainer.playbackManager.play(target)
+            }
+        }
+
+        AppContainer.clearPendingPlaybackRequest()
     }
 
     if (loadingSession) {
@@ -190,7 +235,6 @@ fun BotLocalEnsayoApp() {
         )
     }
 
-    val navController = rememberNavController()
     val destinations = listOf(
         TopLevelDestination("home", "Inicio") { Icon(Icons.Outlined.SpaceDashboard, contentDescription = null) },
         TopLevelDestination("library", "Biblioteca") { Icon(Icons.Outlined.LibraryMusic, contentDescription = null) },
@@ -250,6 +294,12 @@ fun BotLocalEnsayoApp() {
             }
         }
     }
+}
+
+private fun AudioType.matchesPushType(value: String?): Boolean = when (this) {
+    AudioType.ENSAYO -> value.equals("ensayo", ignoreCase = true)
+    AudioType.RIFF -> value.equals("riff", ignoreCase = true)
+    AudioType.CANCION -> value.equals("cancion", ignoreCase = true) || value.equals("canci\u00f3n", ignoreCase = true)
 }
 
 @Composable
@@ -435,5 +485,3 @@ private fun AppBackground(content: @Composable () -> Unit) {
         content()
     }
 }
-
-

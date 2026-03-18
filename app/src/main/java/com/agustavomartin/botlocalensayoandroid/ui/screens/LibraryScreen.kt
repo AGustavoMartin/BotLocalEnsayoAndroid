@@ -29,7 +29,6 @@ import com.agustavomartin.botlocalensayoandroid.data.AudioItem
 import com.agustavomartin.botlocalensayoandroid.data.AudioType
 import com.agustavomartin.botlocalensayoandroid.data.BotRepository
 import com.agustavomartin.botlocalensayoandroid.data.formatDateForChip
-import com.agustavomartin.botlocalensayoandroid.data.millisToLocalDate
 import com.agustavomartin.botlocalensayoandroid.data.parseFlexibleLocalDate
 import com.agustavomartin.botlocalensayoandroid.ui.AppContainer
 import kotlinx.coroutines.launch
@@ -42,9 +41,14 @@ private const val FILTER_CANCION = "Cancion"
 
 @Composable
 fun LibraryScreen(repository: BotRepository) {
-    val items = produceState<List<AudioItem>?>(initialValue = null, producer = {
-        value = repository.getLibrary()
-    }).value
+    val state = produceState(initialValue = RemoteLoadState<List<AudioItem>>()) {
+        value = runCatching { repository.getLibrary() }
+            .fold(
+                onSuccess = { RemoteLoadState(data = it) },
+                onFailure = { RemoteLoadState(error = mapLoadError(it)) }
+            )
+    }.value
+    val items = state.data
     val playbackState by produceState(initialValue = AppContainer.playbackManager.uiState.value) {
         AppContainer.playbackManager.uiState.collect { value = it }
     }
@@ -93,8 +97,13 @@ fun LibraryScreen(repository: BotRepository) {
             }
         }
 
-        if (items == null) {
+        if (items == null && state.error == null) {
             item { LoadingPanel("Cargando biblioteca...") }
+            return@LazyColumn
+        }
+
+        if (items == null && state.error != null) {
+            item { ErrorPanel(state.error) }
             return@LazyColumn
         }
 

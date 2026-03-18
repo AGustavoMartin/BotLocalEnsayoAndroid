@@ -13,6 +13,11 @@ import java.io.IOException
 
 private val Context.appSessionDataStore by preferencesDataStore(name = "app_session")
 
+data class PendingPushRegistration(
+    val pushToken: String,
+    val deviceLabel: String
+)
+
 class SessionStore(private val context: Context) {
     private object Keys {
         val phone = stringPreferencesKey("phone")
@@ -21,14 +26,12 @@ class SessionStore(private val context: Context) {
         val refreshToken = stringPreferencesKey("refresh_token")
         val accessExpiresAt = longPreferencesKey("access_expires_at")
         val refreshExpiresAt = longPreferencesKey("refresh_expires_at")
+        val pendingPushToken = stringPreferencesKey("pending_push_token")
+        val pendingPushDeviceLabel = stringPreferencesKey("pending_push_device_label")
     }
 
     suspend fun read(): AppSession? {
-        val preferences = context.appSessionDataStore.data
-            .catch { exception ->
-                if (exception is IOException) emit(emptyPreferences()) else throw exception
-            }
-            .first()
+        val preferences = readPreferences()
 
         val phone = preferences[Keys.phone] ?: return null
         val memberName = preferences[Keys.memberName] ?: return null
@@ -58,8 +61,45 @@ class SessionStore(private val context: Context) {
         }
     }
 
-    suspend fun clear() {
+    suspend fun readPendingPushRegistration(): PendingPushRegistration? {
+        val preferences = readPreferences()
+        val pushToken = preferences[Keys.pendingPushToken] ?: return null
+        val deviceLabel = preferences[Keys.pendingPushDeviceLabel] ?: return null
+        return PendingPushRegistration(pushToken = pushToken, deviceLabel = deviceLabel)
+    }
+
+    suspend fun savePendingPushRegistration(pushToken: String, deviceLabel: String) {
+        context.appSessionDataStore.edit { preferences ->
+            preferences[Keys.pendingPushToken] = pushToken
+            preferences[Keys.pendingPushDeviceLabel] = deviceLabel
+        }
+    }
+
+    suspend fun clearPendingPushRegistration() {
+        context.appSessionDataStore.edit { preferences ->
+            preferences.remove(Keys.pendingPushToken)
+            preferences.remove(Keys.pendingPushDeviceLabel)
+        }
+    }
+
+    suspend fun clearSession() {
+        context.appSessionDataStore.edit { preferences ->
+            preferences.remove(Keys.phone)
+            preferences.remove(Keys.memberName)
+            preferences.remove(Keys.accessToken)
+            preferences.remove(Keys.refreshToken)
+            preferences.remove(Keys.accessExpiresAt)
+            preferences.remove(Keys.refreshExpiresAt)
+        }
+    }
+
+    suspend fun clearAll() {
         context.appSessionDataStore.edit { preferences -> preferences.clear() }
     }
-}
 
+    private suspend fun readPreferences(): Preferences = context.appSessionDataStore.data
+        .catch { exception ->
+            if (exception is IOException) emit(emptyPreferences()) else throw exception
+        }
+        .first()
+}

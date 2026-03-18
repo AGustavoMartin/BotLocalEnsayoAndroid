@@ -16,9 +16,14 @@ import com.agustavomartin.botlocalensayoandroid.data.DashboardSnapshot
 
 @Composable
 fun HomeScreen(repository: BotRepository) {
-    val snapshot = produceState<DashboardSnapshot?>(initialValue = null) {
-        value = repository.getDashboard()
+    val state = produceState(initialValue = RemoteLoadState<DashboardSnapshot>()) {
+        value = runCatching { repository.getDashboard() }
+            .fold(
+                onSuccess = { RemoteLoadState(data = it) },
+                onFailure = { RemoteLoadState(error = mapLoadError(it)) }
+            )
     }.value
+    val snapshot = state.data
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -33,22 +38,29 @@ fun HomeScreen(repository: BotRepository) {
             )
         }
 
-        if (snapshot == null) {
+        if (snapshot == null && state.error == null) {
             item { LoadingPanel("Cargando dashboard...") }
             return@LazyColumn
         }
+
+        if (snapshot == null && state.error != null) {
+            item { ErrorPanel(state.error) }
+            return@LazyColumn
+        }
+
+        val dashboard = snapshot!!
 
         item {
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.padding(horizontal = 20.dp)
             ) {
-                InfoCard("Biblioteca", snapshot.totalAudios.toString(), "${snapshot.totalEnsayos} ensayos, ${snapshot.totalRiffs} riffs y ${snapshot.totalCanciones} canciones.")
-                InfoCard("Miembros", snapshot.activeMembers.toString(), "${snapshot.activeMembers} miembros activos sincronizados.")
-                snapshot.lastPayment?.let {
+                InfoCard("Biblioteca", dashboard.totalAudios.toString(), "${dashboard.totalEnsayos} ensayos, ${dashboard.totalRiffs} riffs y ${dashboard.totalCanciones} canciones.")
+                InfoCard("Miembros", dashboard.activeMembers.toString(), "${dashboard.activeMembers} miembros activos sincronizados.")
+                dashboard.lastPayment?.let {
                     InfoCard("Ultimo pago", it.monthLabel, "${it.payerName} - ${it.amountLabel}")
                 }
-                InfoCard("Proximo pagador", snapshot.nextPayerName, snapshot.nextPayerMonthLabel)
+                InfoCard("Proximo pagador", dashboard.nextPayerName, dashboard.nextPayerMonthLabel)
             }
         }
         item {
@@ -58,7 +70,7 @@ fun HomeScreen(repository: BotRepository) {
                 subtitle = "Ultimos audios visibles para reproducir o abrir luego en biblioteca."
             )
         }
-        items(snapshot.recentAudios) { item ->
+        items(dashboard.recentAudios) { item ->
             DataRow(
                 primary = item.title,
                 secondary = item.dateLabel,

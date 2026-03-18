@@ -16,21 +16,24 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
         "34678036031" to "Gustavo",
         "34690379248" to "Antonio Espejo"
     )
+    private val fakeResetCodes = ConcurrentHashMap<String, String>()
 
     override suspend fun restoreSession(): AppSession? {
         val saved = sessionStore.read() ?: return null
         val now = System.currentTimeMillis()
 
         if (saved.refreshExpiresAt <= now) {
-            sessionStore.clear()
+            sessionStore.clearSession()
             return null
         }
 
         if (saved.accessExpiresAt > now) {
+            syncPendingPushRegistration(saved)
             return saved
         }
 
         if (apiBaseUrl().isBlank()) {
+            syncPendingPushRegistration(saved)
             return saved
         }
 
@@ -40,15 +43,16 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
                 body = JSONObject().put("refreshToken", saved.refreshToken)
             )
             if (!response.optBoolean("ok")) {
-                sessionStore.clear()
+                sessionStore.clearSession()
                 null
             } else {
                 val session = parseSession(response.getJSONObject("session"))
                 sessionStore.save(session)
+                syncPendingPushRegistration(session)
                 session
             }
         } catch (_: Exception) {
-            sessionStore.clear()
+            sessionStore.clearSession()
             null
         }
     }
@@ -89,6 +93,7 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
             fakePins[normalizedPhone] = pin
             val session = fakeSession(normalizedPhone, memberName)
             sessionStore.save(session)
+            syncPendingPushRegistration(session)
             return session
         }
 
@@ -106,6 +111,7 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
 
         val session = parseSession(response.getJSONObject("session"))
         sessionStore.save(session)
+        syncPendingPushRegistration(session)
         return session
     }
 
@@ -117,6 +123,7 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
             val memberName = fakeNames[normalizedPhone] ?: throw IllegalStateException("Telefono no autorizado")
             val session = fakeSession(normalizedPhone, memberName)
             sessionStore.save(session)
+            syncPendingPushRegistration(session)
             return session
         }
 
@@ -134,23 +141,73 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
 
         val session = parseSession(response.getJSONObject("session"))
         sessionStore.save(session)
+        syncPendingPushRegistration(session)
+        return session
+    }
+
+    override suspend fun requestPinReset(phone: String): PinResetChallenge {
+        val normalizedPhone = normalizePhone(phone)
+        if (apiBaseUrl().isBlank()) {
+            val memberName = fakeNames[normalizedPhone] ?: throw IllegalStateException("MEMBER_NOT_ALLOWED")
+            if (!fakePins.containsKey(normalizedPhone)) throw IllegalStateException("PIN_NOT_REGISTERED")
+            fakeResetCodes[normalizedPhone] = "123456"
+            return PinResetChallenge(normalizedPhone, memberName)
+        }
+
+        val response = postJson(
+            path = "/api/app-auth/request-pin-reset",
+            body = JSONObject().put("phone", normalizedPhone)
+        )
+
+        if (!response.optBoolean("ok")) {
+            throw IllegalStateException(response.optString("error", "PIN_RESET_REQUEST_FAILED"))
+        }
+
+        return PinResetChallenge(
+            phone = response.getString("phone"),
+            memberName = response.getString("memberName")
+        )
+    }
+
+    override suspend fun confirmPinReset(phone: String, code: String, newPin: String, deviceLabel: String): AppSession {
+        val normalizedPhone = normalizePhone(phone)
+        if (apiBaseUrl().isBlank()) {
+            val memberName = fakeNames[normalizedPhone] ?: throw IllegalStateException("MEMBER_NOT_ALLOWED")
+            val expectedCode = fakeResetCodes[normalizedPhone] ?: throw IllegalStateException("RESET_CODE_NOT_FOUND")
+            if (expectedCode != code) throw IllegalStateException("INVALID_RESET_CODE")
+            fakePins[normalizedPhone] = newPin
+            fakeResetCodes.remove(normalizedPhone)
+            val session = fakeSession(normalizedPhone, memberName)
+            sessionStore.save(session)
+            syncPendingPushRegistration(session)
+            return session
+        }
+
+        val response = postJson(
+            path = "/api/app-auth/confirm-pin-reset",
+            body = JSONObject()
+                .put("phone", normalizedPhone)
+                .put("code", code)
+                .put("newPin", newPin)
+                .put("deviceLabel", deviceLabel)
+        )
+
+        if (!response.optBoolean("ok")) {
+            throw IllegalStateException(response.optString("error", "PIN_RESET_CONFIRM_FAILED"))
+        }
+
+        val session = parseSession(response.getJSONObject("session"))
+        sessionStore.save(session)
+        syncPendingPushRegistration(session)
         return session
     }
 
     override suspend fun registerPushToken(pushToken: String, deviceLabel: String): Boolean {
+        sessionStore.savePendingPushRegistration(pushToken, deviceLabel)
         val session = restoreSession() ?: return false
         if (apiBaseUrl().isBlank()) return false
 
-        return runCatching {
-            val response = postJsonAuthorized(
-                path = "/api/app/push/register",
-                accessToken = session.accessToken,
-                body = JSONObject()
-                    .put("pushToken", pushToken)
-                    .put("deviceLabel", deviceLabel)
-            )
-            response.optBoolean("ok")
-        }.getOrDefault(false)
+        return performPushRegistration(session, pushToken, deviceLabel)
     }
 
     override suspend fun fetchAppMeta(): AppMeta? {
@@ -177,7 +234,30 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
                 )
             }
         }
-        sessionStore.clear()
+        sessionStore.clearSession()
+    }
+
+    private suspend fun syncPendingPushRegistration(session: AppSession) {
+        if (apiBaseUrl().isBlank()) return
+        val pending = sessionStore.readPendingPushRegistration() ?: return
+        performPushRegistration(session, pending.pushToken, pending.deviceLabel)
+    }
+
+    private suspend fun performPushRegistration(session: AppSession, pushToken: String, deviceLabel: String): Boolean {
+        return runCatching {
+            val response = postJsonAuthorized(
+                path = "/api/app/push/register",
+                accessToken = session.accessToken,
+                body = JSONObject()
+                    .put("pushToken", pushToken)
+                    .put("deviceLabel", deviceLabel)
+            )
+            val ok = response.optBoolean("ok")
+            if (ok) {
+                sessionStore.clearPendingPushRegistration()
+            }
+            ok
+        }.getOrDefault(false)
     }
 
     private fun fakeSession(phone: String, memberName: String): AppSession {
@@ -211,7 +291,11 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
 
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (text.isBlank()) JSONObject() else JSONObject(text)
+        when {
+            text.isBlank() -> JSONObject()
+            looksLikeHtml(text) -> JSONObject().put("ok", false).put("error", "HTML_RESPONSE")
+            else -> JSONObject(text)
+        }
     }
 
     private suspend fun postJson(path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
@@ -230,10 +314,10 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
 
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (text.isBlank()) {
-            JSONObject().put("ok", false).put("error", "EMPTY_RESPONSE")
-        } else {
-            JSONObject(text)
+        when {
+            text.isBlank() -> JSONObject().put("ok", false).put("error", "EMPTY_RESPONSE")
+            looksLikeHtml(text) -> JSONObject().put("ok", false).put("error", "HTML_RESPONSE")
+            else -> JSONObject(text)
         }
     }
 
@@ -254,10 +338,10 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
 
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (text.isBlank()) {
-            JSONObject().put("ok", false).put("error", "EMPTY_RESPONSE")
-        } else {
-            JSONObject(text)
+        when {
+            text.isBlank() -> JSONObject().put("ok", false).put("error", "EMPTY_RESPONSE")
+            looksLikeHtml(text) -> JSONObject().put("ok", false).put("error", "HTML_RESPONSE")
+            else -> JSONObject(text)
         }
     }
 
@@ -271,5 +355,10 @@ class AppAuthRepository(private val sessionStore: SessionStore) : AuthRepository
             digits.startsWith("0034") -> digits.drop(2)
             else -> digits
         }
+    }
+
+    private fun looksLikeHtml(text: String): Boolean {
+        val normalized = text.trimStart().lowercase()
+        return normalized.startsWith("<!doctype") || normalized.startsWith("<html")
     }
 }

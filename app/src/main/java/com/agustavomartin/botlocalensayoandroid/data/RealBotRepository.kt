@@ -7,10 +7,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 
 class RealBotRepository(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val onSessionExpired: () -> Unit
 ) : BotRepository {
 
     override suspend fun getDashboard(): DashboardSnapshot {
@@ -79,7 +81,7 @@ class RealBotRepository(
     }
 
     private suspend fun authorizedGet(path: String): JSONObject = withContext(Dispatchers.IO) {
-        val session = authRepository.restoreSession() ?: throw IllegalStateException("Sesion no disponible")
+        val session = authRepository.restoreSession() ?: expireSession()
         val url = URL(apiBaseUrl() + path)
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -88,15 +90,37 @@ class RealBotRepository(
             setRequestProperty("Authorization", "Bearer ${session.accessToken}")
         }
 
-        val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (text.isBlank()) throw IllegalStateException("Respuesta vacia del servidor")
+        try {
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (text.isBlank()) throw IllegalStateException("EMPTY_RESPONSE")
 
-        val json = JSONObject(text)
-        if (!json.optBoolean("ok", false)) {
-            throw IllegalStateException(json.optString("error", "SERVER_ERROR"))
+            val json = runCatching { JSONObject(text) }
+                .getOrElse { throw IllegalStateException("INVALID_SERVER_RESPONSE") }
+
+            if (responseCode == HttpURLConnection.HTTP_UNAUTHORIZED ||
+                json.optString("error") == "SESSION_EXPIRED"
+            ) {
+                expireSession()
+            }
+
+            if (!json.optBoolean("ok", false)) {
+                throw IllegalStateException(json.optString("error", "SERVER_ERROR"))
+            }
+
+            json
+        } catch (error: SocketTimeoutException) {
+            throw IllegalStateException("NETWORK_TIMEOUT", error)
+        } catch (error: java.net.SocketException) {
+            throw IllegalStateException("NETWORK_ERROR", error)
         }
-        json
+    }
+
+    private suspend fun expireSession(): Nothing {
+        authRepository.logout()
+        onSessionExpired()
+        throw IllegalStateException("SESSION_EXPIRED")
     }
 
     private fun JSONArray.toAudioItems(): List<AudioItem> = buildList {

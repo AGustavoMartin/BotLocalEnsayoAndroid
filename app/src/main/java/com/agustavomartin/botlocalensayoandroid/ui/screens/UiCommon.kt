@@ -2,7 +2,6 @@ package com.agustavomartin.botlocalensayoandroid.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+data class RemoteLoadState<T>(
+    val data: T? = null,
+    val error: String? = null
+)
 
 @Composable
 fun ScreenHeader(eyebrow: String, title: String, subtitle: String) {
@@ -100,6 +104,31 @@ fun LoadingPanel(message: String) {
         CircularProgressIndicator(color = Color(0xFF47D7D1), strokeWidth = 3.dp, modifier = Modifier.size(34.dp))
         Text(message, color = Color(0xFFC8D1DB), style = MaterialTheme.typography.bodyLarge)
     }
+}
+
+@Composable
+fun ErrorPanel(message: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .background(Color(0xB2331F2A), RoundedCornerShape(24.dp))
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("No se pudo cargar", color = Color(0xFFF8C8C8), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(message, color = Color(0xFFF4DADA), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+fun mapLoadError(error: Throwable): String = when (error.message) {
+    "SESSION_EXPIRED" -> "La sesion ha caducado. Vuelve a entrar para seguir usando la app."
+    "NETWORK_TIMEOUT" -> "La conexion ha tardado demasiado. Prueba otra vez en unos segundos."
+    "NETWORK_ERROR" -> "No se ha podido conectar con el servidor. Revisa la red del movil."
+    "INVALID_SERVER_RESPONSE" -> "El servidor ha devuelto una respuesta no valida."
+    "EMPTY_RESPONSE" -> "El servidor no ha devuelto datos."
+    else -> error.message ?: "Ha ocurrido un error inesperado."
 }
 
 @Composable

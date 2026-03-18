@@ -21,3 +21,8 @@ sealed interface AuthStartResult {
     data class EnterPin(val phone: String, val memberName: String) : AuthStartResult
     data object NotAllowed : AuthStartResult
 }
+
+data class PinResetChallenge(
+    val phone: String,
+    val memberName: String
+)

@@ -14,9 +14,14 @@ import com.agustavomartin.botlocalensayoandroid.data.MemberSummary
 
 @Composable
 fun MembersScreen(repository: BotRepository) {
-    val items = produceState<List<MemberSummary>?>(initialValue = null, producer = {
-        value = repository.getMembers()
-    }).value
+    val state = produceState(initialValue = RemoteLoadState<List<MemberSummary>>()) {
+        value = runCatching { repository.getMembers() }
+            .fold(
+                onSuccess = { RemoteLoadState(data = it) },
+                onFailure = { RemoteLoadState(error = mapLoadError(it)) }
+            )
+    }.value
+    val items = state.data
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -31,12 +36,17 @@ fun MembersScreen(repository: BotRepository) {
             )
         }
 
-        if (items == null) {
+        if (items == null && state.error == null) {
             item { LoadingPanel("Cargando miembros...") }
             return@LazyColumn
         }
 
-        items(items) { item ->
+        if (items == null && state.error != null) {
+            item { ErrorPanel(state.error) }
+            return@LazyColumn
+        }
+
+        items(items!!) { item ->
             DataRow(
                 primary = item.name,
                 secondary = item.lastSeenLabel,
